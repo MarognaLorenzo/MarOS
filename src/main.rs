@@ -11,6 +11,11 @@ use MarOS::println;
 pub extern "C" fn _start() -> ! {
     println!("MarOS");
 
+
+    MarOS::init();
+
+    x86_64::instructions::interrupts::int3(); // generates a breakpoint
+
     #[cfg(test)]
     test_main();
 
