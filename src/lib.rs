@@ -9,13 +9,13 @@
 pub mod serial;
 pub mod vga_buffer;
 pub mod interrupts;
+pub mod gdt;
 
 use core::panic::PanicInfo;
 
 pub trait Testable {
     fn run(&self) -> ();
 }
-
 
 impl<T> Testable for T where T: Fn(),  {
     fn run(&self) -> () {
@@ -25,7 +25,6 @@ impl<T> Testable for T where T: Fn(),  {
     }
 }
 
-
 pub fn test_runner(tests: &[&dyn Testable]) {
     serial_println!("Running {} tests", tests.len());
     for test in tests{
@@ -33,8 +32,6 @@ pub fn test_runner(tests: &[&dyn Testable]) {
     }
     exit_qemu(QemuExitCode::Success);
 } // tests is a list of closures which only take object as references.#[cfg(test)]
-
-
 
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
@@ -50,7 +47,6 @@ pub extern "C" fn _start() -> ! {
     test_main();
     loop{}
 }
-
 
 #[cfg(test)]
 #[panic_handler]
@@ -76,9 +72,6 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
 }
 
 pub fn init() {
+    gdt::init();
     interrupts::init_idt();
 }
-
-
-
-
