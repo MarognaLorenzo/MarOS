@@ -1,4 +1,5 @@
 use core::fmt;
+use core::ops::{Deref, DerefMut};
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
@@ -10,7 +11,8 @@ lazy_static! {
     /// Used by the `print!` and `println!` macros.
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        row_position: 0,
+        color_code: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
     });
 }
@@ -58,6 +60,20 @@ struct ScreenChar {
     color_code: ColorCode,
 }
 
+impl Deref for ScreenChar {
+    type Target = ScreenChar;
+
+    fn deref(&self) -> &Self::Target {
+        &self
+    }
+}
+
+impl DerefMut for ScreenChar {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self
+    }
+}
+
 /// The height of the text buffer (normally 25 lines).
 const BUFFER_HEIGHT: usize = 25;
 /// The width of the text buffer (normally 80 columns).
@@ -75,6 +91,7 @@ struct Buffer {
 /// `core::fmt::Write` trait.
 pub struct Writer {
     column_position: usize,
+    row_position: usize,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
 }
@@ -84,17 +101,23 @@ impl Writer {
     ///
     /// Wraps lines at `BUFFER_WIDTH`. Supports the `\n` newline character.
     pub fn write_byte(&mut self, byte: u8) {
+        let row = self.row_position;
+        let col = self.column_position;
+        let color_code = self.color_code;
         match byte {
-            b'\n' => self.new_line(),
+            b'\n' => {
+                if self.row_position == BUFFER_HEIGHT - 1 {
+                    self.new_line()
+                } else {
+                    self.row_position += 1;
+                    self.column_position = 0;
+                }
+            }
             byte => {
                 if self.column_position >= BUFFER_WIDTH {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
-
-                let color_code = self.color_code;
                 self.buffer.chars[row][col].write(ScreenChar {
                     ascii_character: byte,
                     color_code,
@@ -102,6 +125,10 @@ impl Writer {
                 self.column_position += 1;
             }
         }
+        // self.buffer.chars[row][col+1].write(ScreenChar {
+        //     ascii_character: b'_',
+        //     color_code,
+        // });
     }
 
     /// Writes the given ASCII string to the buffer.
@@ -114,6 +141,15 @@ impl Writer {
             match byte {
                 // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
+                b'\t' => { for _ in 0..4 {self.write_byte(b' ')} }
+                0x08 => { // backspace
+                    self.column_position-=1;
+                    self.write_byte(b' ');
+                    self.column_position-=1;
+                }
+                0x1b => {
+                    "<Esc>".bytes().for_each(|b| self.write_byte(b));
+                }
                 // not part of printable ASCII range
                 _ => self.write_byte(0xfe),
             }

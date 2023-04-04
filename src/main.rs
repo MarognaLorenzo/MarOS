@@ -6,7 +6,6 @@
 
 use core::panic::PanicInfo;
 use bootloader::{BootInfo, entry_point};
-use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
 use MarOS::{hlt_loop, memory, println};
