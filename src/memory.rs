@@ -1,10 +1,8 @@
-use pc_keyboard::KeyCode::N;
 use x86_64::{
     structures::paging::PageTable,
     VirtAddr,
     PhysAddr
 };
-use x86_64::registers::control::Cr3;
 use x86_64::structures::paging::{FrameAllocator, Mapper, Page, PhysFrame, Size4KiB};
 
 mod deprecated {

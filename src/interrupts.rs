@@ -34,8 +34,6 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     _error_code: PageFaultErrorCode
 ){
-    use x86_64::registers::control::Cr2;
-
     println!("EXCEPTION: PAGE FAULT");
     println!("Accessed address: {:?}", Cr2::read());
     println!("Error code: {:?}", _error_code);

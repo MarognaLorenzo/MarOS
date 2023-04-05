@@ -44,11 +44,11 @@ entry_point!(kernel_main);
          boot_info.physical_memory_offset,
      ];
 
-     for &address in &addresses {
-         let virt = VirtAddr::new(address);
-         let phys = mapper.translate_addr(virt);
-         println!("{:?} -> {:?}", virt, phys);
-     }
+     // for &address in &addresses {
+     //     let virt = VirtAddr::new(address);
+     //     let phys = mapper.translate_addr(virt);
+     //     println!("{:?} -> {:?}", virt, phys);
+     // }
 
      #[cfg(test)]
      test_main();
