@@ -1,3 +1,4 @@
+use alloc::string::String;
 use core::fmt;
 use core::ops::{Deref, DerefMut};
 use lazy_static::lazy_static;
@@ -15,6 +16,7 @@ lazy_static! {
         row_position: 0,
         color_code: ColorCode::new(Color::White, Color::Black),
         buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        clipboard: String::new()
     });
 }
 
@@ -92,10 +94,10 @@ struct ScreenChar {
 }
 
 impl Deref for ScreenChar {
-    type Target = ScreenChar;
+    type Target = ScreenChar ;
 
     fn deref(&self) -> &Self::Target {
-        &self
+        self
     }
 }
 
@@ -125,6 +127,7 @@ pub struct Writer {
     row_position: usize,
     color_code: ColorCode,
     buffer: &'static mut Buffer,
+    clipboard: String
 }
 
 impl Writer {
@@ -143,7 +146,7 @@ impl Writer {
                     ascii_character: byte,
                     color_code,
                 });
-                self.column_position += 1;
+                self.move_right();
             }
         }
         self.update_cursor();
@@ -160,6 +163,12 @@ impl Writer {
                 // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
                 b'\t' => {
+                    if self.column_position == 0 && self.read_relative_sc(0).ascii_character == 0x0 {
+                        for _ in 0..4 {
+                            self.write_byte(b' ');
+                        }
+                        return;
+                    }
                     let mut current = self.read_relative_sc(0).ascii_character;
                     while current != b' ' && current != 0x0 {
                         self.move_right();
@@ -186,11 +195,32 @@ impl Writer {
                     self.row_position = 0;
                     self.update_cursor();
                 }
-                0x0c => {
-                    for _ in 0..BUFFER_HEIGHT {
-                        self.shift_lines_up()
-                    }
+                0x0c => { //Control-L
+                    self.clear_all();
+                    self.column_position = 0;
+                    self.row_position = 0;
+                    self.update_cursor();
+                    self.write_string("MarOS:\n");
                 }
+                0x03 =>{//Control-C
+                    let mut tmp = String::new();
+                    for i in 0..BUFFER_WIDTH{
+                        let sc = self.buffer.chars[self.row_position][i].read();
+                        if sc == EMPTY { break; }
+                        let ch = sc.ascii_character as char;
+                        tmp.push(ch)
+                    }
+                    self.clipboard = tmp;
+                }
+                0x16 => {//Control-v
+                    self.clean_cursor_current_position();
+                    self.clear_row(self.row_position);
+                    self.column_position=0;
+                    let sentence = self.clipboard.clone();
+                    self.write_string(sentence.chars().as_str());
+                    self.update_cursor();
+                }
+
                 // not part of printable ASCII range
                 _ => self.write_byte(byte),
             }
@@ -282,25 +312,24 @@ impl Writer {
 
         (self.row_position, self.column_position)
     }
+    fn set_relative_position(&mut self, shift: i32) {
+        (self.row_position, self.column_position) = self.get_relative_position(shift);
+    }
 
     pub fn move_left(&mut self) {
         self.clean_cursor_current_position();
-        (self.row_position, self.column_position) = self.get_relative_position(-1);
-        let cs = self.read_relative_sc(0).ascii_character;
-        self.write_relative_sc(0, ScreenChar {
-            ascii_character: cs,
-            color_code: CURSOR.color_code,
-        })
+        self.set_relative_position(-1);
+        self.update_cursor()
     }
     pub fn move_right(&mut self) {
         self.clean_cursor_current_position();
-        (self.row_position, self.column_position) = self.get_relative_position(1);
+        self.set_relative_position(1);
         self.update_cursor();
     }
     pub fn move_down(&mut self) {
         self.clean_cursor_current_position();
         if self.row_position == BUFFER_HEIGHT - 1 {
-            self.shift_lines_up();
+            self.update_cursor();
             return;
         }
         self.row_position += 1;
@@ -312,6 +341,7 @@ impl Writer {
     pub fn move_up(&mut self){
         self.clean_cursor_current_position();
         if self.row_position == 0 {
+            self.update_cursor();
             return;
         }
         self.row_position -= 1;

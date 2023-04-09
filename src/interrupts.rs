@@ -1,8 +1,7 @@
-use core::alloc::Layout;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use crate::{gdt, hlt_loop, print, println};
 use lazy_static::lazy_static;
-use pc_keyboard::{Keyboard, KeyCode};
+use pc_keyboard::KeyCode;
 
 pub fn init_idt() {
     IDT.load();
@@ -96,7 +95,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
     lazy_static! {
         static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
-            Mutex::new(Keyboard::new(ScancodeSet1::new(), layouts::Us104Key,HandleControl::Ignore)
+            Mutex::new(Keyboard::new(ScancodeSet1::new(), layouts::Us104Key,HandleControl::MapLettersToUnicode)
             );
     }
     let mut keyboard = KEYBOARD.lock();
@@ -115,7 +114,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                         _ => {}
                     }
                 }
-                DecodedKey::Unicode(character) => { print!("{}", character) }
+                DecodedKey::Unicode(character) => {
+                    print!("{}", character);
+                    // print!("{}: 0x{:02x}", character, character as u8)
+                }
             }
         }
     }
