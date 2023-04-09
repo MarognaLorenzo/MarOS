@@ -18,8 +18,8 @@ extern crate alloc;
 entry_point!(kernel_main);
 
  fn kernel_main(boot_info: &'static BootInfo) -> ! {
-     println!("MarOS");
      MarOS::init();
+     println!("MarOS");
 
      let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
      let mut mapper = unsafe { memory::init(phys_mem_offset)};

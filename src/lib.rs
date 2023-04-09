@@ -71,10 +71,12 @@ pub fn exit_qemu(exit_code: QemuExitCode) {
 }
 
 pub fn init() {
+    use vga_buffer::WRITER;
     gdt::init();
     interrupts::init_idt();
     unsafe {interrupts::PICS.lock().initialize();}
     x86_64::instructions::interrupts::enable();
+    WRITER.lock().clear_all();
 }
 
 pub fn hlt_loop() -> ! {

@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
 use x86_64::instructions::interrupts::without_interrupts;
-use crate::vga_buffer::Color::{LightCyan, White};
+use crate::vga_buffer::Color::{Black, Blue, Brown, Cyan, DarkGray, Green, LightBlue, LightCyan, LightGray, LightGreen, LightRed, Magenta, Pink, Red, White, Yellow};
 
 lazy_static! {
     /// A global `Writer` instance that can be used for printing to the VGA text buffer.
@@ -18,8 +18,19 @@ lazy_static! {
     });
 }
 
-const CURSOR: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(White, LightCyan) };
+const CURSOR: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(Black, LightCyan) };
 const EMPTY: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(Color::White, Color::Black) };
+
+impl ScreenChar{
+    ///check if the character is empty
+    fn is_empty(&self) -> bool {
+        self == &EMPTY
+    }
+    /// check if the colorcode is the same as the cursor
+    fn is_cursor(&self) -> bool{
+        self.color_code == CURSOR.color_code
+    }
+}
 
 /// The standard color palette in VGA text mode.
 #[allow(dead_code)]
@@ -44,6 +55,30 @@ pub enum Color {
     White = 15,
 }
 
+impl Color {
+    pub fn from(n: u8) -> Color {
+        match n {
+            0 => Black,
+            1 => Blue,
+            2 => Green,
+            3 => Cyan,
+            4 => Red,
+            5 => Magenta,
+            6 => Brown,
+            7 => LightGray,
+            8 => DarkGray,
+            9 => LightBlue,
+            10 => LightGreen,
+            11 => LightCyan,
+            12 => LightRed,
+            13 => Pink,
+            14 => Yellow,
+            15 => White,
+            _ => Brown
+        }
+    }
+}
+
 /// A combination of a foreground and a background color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
@@ -53,6 +88,9 @@ impl ColorCode {
     /// Create a new `ColorCode` with the given foreground and background colors.
     pub const fn new(foreground: Color, background: Color) -> ColorCode {
         ColorCode((background as u8) << 4 | (foreground as u8))
+    }
+    pub fn new_from(code: u8) -> ColorCode {
+        ColorCode(code)
     }
 }
 
@@ -119,7 +157,7 @@ impl Writer {
                 self.column_position += 1;
             }
         }
-        self.write_relative_sc(0, CURSOR);
+        self.update_color_code(CURSOR.color_code.0)
     }
 
     /// Writes the given ASCII string to the buffer.
@@ -135,14 +173,16 @@ impl Writer {
                 b'\t' => { for _ in 0..4 { self.write_byte(b' ') } }
                 0x08 => { // backspace
                     self.clean_cursor_current_position();
-                    if self.column_position > 0 { self.column_position -= 1; } else {
-                        if self.row_position != 0 { self.row_position -= 1; }
-                        self.column_position = BUFFER_WIDTH - 1;
-                        while self.read_relative_sc(0).ascii_character == 0x0 && self.column_position != 0 {
-                            self.column_position -= 1;
-                        }
+                    self.move_left();
+                    for i in self.column_position..BUFFER_WIDTH - 1 {
+                        let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
+                        self.buffer.chars[self.row_position][i].write(ScreenChar{
+                            ascii_character: nc,
+                            color_code: self.color_code
+                        })
                     }
-                    self.write_relative_sc(0, CURSOR);
+                    self.buffer.chars[self.row_position][BUFFER_WIDTH - 1].write(EMPTY);
+                    self.update_color_code(CURSOR.color_code.0);
                 }
                 0x1b => {
                     "<Esc>".bytes().for_each(|b| self.write_byte(b));
@@ -173,11 +213,17 @@ impl Writer {
     /// Clears a row by overwriting it with blank characters.
     fn clear_row(&mut self, row: usize) {
         let blank = ScreenChar {
-            ascii_character: b' ',
+            ascii_character: 0x0,
             color_code: self.color_code,
         };
         for col in 0..BUFFER_WIDTH {
             self.buffer.chars[row][col].write(blank);
+        }
+    }
+
+    pub fn clear_all(&mut self){
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row);
         }
     }
 
@@ -208,10 +254,7 @@ impl Writer {
     fn clean_cursor_current_position(&mut self) {
         let current_sc = self.read_relative_sc(0);
         if current_sc.color_code == CURSOR.color_code { // Cursor visibility has to adapt
-            self.write_relative_sc(0, ScreenChar {
-                color_code: self.color_code,
-                ascii_character: current_sc.ascii_character,
-            });
+            self.update_color_code(self.color_code.0)
         }
     }
 
@@ -222,18 +265,17 @@ impl Writer {
                 self.column_position = BUFFER_WIDTH - 1;
                 while self.read_relative_sc(0).ascii_character == EMPTY.ascii_character && self.column_position != 0 {
                     self.column_position -= 1;
-                }
+                } if !(self.read_relative_sc(0) == EMPTY) {self.column_position += 1};
             }
             return self.get_relative_position(shift + 1);
         }
         if shift > 0 {
-            if self.column_position == BUFFER_WIDTH - 1 || self.buffer.chars[self.row_position][self.column_position + 1].read() == EMPTY {
+            if self.column_position == BUFFER_WIDTH - 1 || self.read_relative_sc(0) == EMPTY {
                 self.column_position = 0;
                 self.row_position = if self.row_position != BUFFER_HEIGHT - 1
-                {self.row_position + 1}
-                else {self.row_position}
+                { self.row_position + 1 } else { self.row_position }
             } else {
-                if self.read_relative_sc(0) != EMPTY {self.column_position += 1;}
+                if self.read_relative_sc(0) != EMPTY { self.column_position += 1; }
             }
             return self.get_relative_position(shift - 1);
         }
@@ -253,10 +295,20 @@ impl Writer {
     pub fn move_right(&mut self) {
         self.clean_cursor_current_position();
         (self.row_position, self.column_position) = self.get_relative_position(1);
-        let cs = self.read_relative_sc(0).ascii_character;
-        self.write_relative_sc(0, ScreenChar {
-            ascii_character: cs,
-            color_code: CURSOR.color_code,
+        self.update_color_code(CURSOR.color_code.0)
+    }
+    pub fn update_char(&mut self, ascii_character: u8) {
+        let sc = self.buffer.chars[self.row_position][self.column_position].read();
+        self.buffer.chars[self.row_position][self.column_position].write(ScreenChar {
+            ascii_character,
+            color_code: sc.color_code,
+        })
+    }
+    pub fn update_color_code(&mut self, color_code: u8) {
+        let sc = self.buffer.chars[self.row_position][self.column_position].read();
+        self.buffer.chars[self.row_position][self.column_position].write(ScreenChar {
+            ascii_character: sc.ascii_character,
+            color_code: ColorCode::new_from(color_code)
         })
     }
 }
@@ -285,7 +337,6 @@ macro_rules! println {
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
     use core::fmt::Write;
-    use x86_64::instructions::interrupts;
     without_interrupts(|| {
         WRITER.lock().write_fmt(args).unwrap();
     });
