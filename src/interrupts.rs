@@ -110,10 +110,12 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
                     match rk {
                         KeyCode::ArrowLeft => WRITER.lock().move_left(),
                         KeyCode::ArrowRight => WRITER.lock().move_right(),
+                        KeyCode::ArrowDown => WRITER.lock().move_down(),
+                        KeyCode::ArrowUp => WRITER.lock().move_up(),
                         _ => {}
                     }
                 }
-                DecodedKey::Unicode(charachter) => { print!("{}", charachter) }
+                DecodedKey::Unicode(character) => { print!("{}", character) }
             }
         }
     }

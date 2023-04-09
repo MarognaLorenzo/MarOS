@@ -19,18 +19,7 @@ lazy_static! {
 }
 
 const CURSOR: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(Black, LightCyan) };
-const EMPTY: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(Color::White, Color::Black) };
-
-impl ScreenChar{
-    ///check if the character is empty
-    fn is_empty(&self) -> bool {
-        self == &EMPTY
-    }
-    /// check if the colorcode is the same as the cursor
-    fn is_cursor(&self) -> bool{
-        self.color_code == CURSOR.color_code
-    }
-}
+const EMPTY: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(White, Black) };
 
 /// The standard color palette in VGA text mode.
 #[allow(dead_code)]
@@ -157,7 +146,7 @@ impl Writer {
                 self.column_position += 1;
             }
         }
-        self.update_color_code(CURSOR.color_code.0)
+        self.update_cursor();
     }
 
     /// Writes the given ASCII string to the buffer.
@@ -170,22 +159,32 @@ impl Writer {
             match byte {
                 // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
-                b'\t' => { for _ in 0..4 { self.write_byte(b' ') } }
+                b'\t' => {
+                    let mut current = self.read_relative_sc(0).ascii_character;
+                    while current != b' ' && current != 0x0 {
+                        self.move_right();
+                        current = self.read_relative_sc(0).ascii_character;
+                    }
+                    self.move_right()
+                }
                 0x08 => { // backspace
                     self.clean_cursor_current_position();
                     self.move_left();
                     for i in self.column_position..BUFFER_WIDTH - 1 {
                         let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
-                        self.buffer.chars[self.row_position][i].write(ScreenChar{
+                        self.buffer.chars[self.row_position][i].write(ScreenChar {
                             ascii_character: nc,
-                            color_code: self.color_code
+                            color_code: self.color_code,
                         })
                     }
                     self.buffer.chars[self.row_position][BUFFER_WIDTH - 1].write(EMPTY);
-                    self.update_color_code(CURSOR.color_code.0);
+                    self.update_cursor();
                 }
                 0x1b => {
-                    "<Esc>".bytes().for_each(|b| self.write_byte(b));
+                    self.clear_all();
+                    self.column_position = 0;
+                    self.row_position = 0;
+                    self.update_cursor();
                 }
                 0x0c => {
                     for _ in 0..BUFFER_HEIGHT {
@@ -221,7 +220,7 @@ impl Writer {
         }
     }
 
-    pub fn clear_all(&mut self){
+    pub fn clear_all(&mut self) {
         for row in 0..BUFFER_HEIGHT {
             self.clear_row(row);
         }
@@ -250,7 +249,7 @@ impl Writer {
             color_code: sc.color_code,
         });
     }
-    /// Writes empty Screenchar in current position if there is a CURSOR on it
+    /// Writes empty Screen char in current position if there is a CURSOR on it
     fn clean_cursor_current_position(&mut self) {
         let current_sc = self.read_relative_sc(0);
         if current_sc.color_code == CURSOR.color_code { // Cursor visibility has to adapt
@@ -265,7 +264,8 @@ impl Writer {
                 self.column_position = BUFFER_WIDTH - 1;
                 while self.read_relative_sc(0).ascii_character == EMPTY.ascii_character && self.column_position != 0 {
                     self.column_position -= 1;
-                } if !(self.read_relative_sc(0) == EMPTY) {self.column_position += 1};
+                }
+                if !(self.read_relative_sc(0) == EMPTY) { self.column_position += 1 };
             }
             return self.get_relative_position(shift + 1);
         }
@@ -295,7 +295,30 @@ impl Writer {
     pub fn move_right(&mut self) {
         self.clean_cursor_current_position();
         (self.row_position, self.column_position) = self.get_relative_position(1);
-        self.update_color_code(CURSOR.color_code.0)
+        self.update_cursor();
+    }
+    pub fn move_down(&mut self) {
+        self.clean_cursor_current_position();
+        if self.row_position == BUFFER_HEIGHT - 1 {
+            self.shift_lines_up();
+            return;
+        }
+        self.row_position += 1;
+        while self.read_relative_sc(0) == EMPTY && self.column_position > 0 {
+            self.column_position -= 1;
+        }
+        self.update_cursor()
+    }
+    pub fn move_up(&mut self){
+        self.clean_cursor_current_position();
+        if self.row_position == 0 {
+            return;
+        }
+        self.row_position -= 1;
+        while self.read_relative_sc(0) == EMPTY && self.column_position > 0 {
+            self.column_position -= 1;
+        }
+        self.update_cursor()
     }
     pub fn update_char(&mut self, ascii_character: u8) {
         let sc = self.buffer.chars[self.row_position][self.column_position].read();
@@ -308,8 +331,11 @@ impl Writer {
         let sc = self.buffer.chars[self.row_position][self.column_position].read();
         self.buffer.chars[self.row_position][self.column_position].write(ScreenChar {
             ascii_character: sc.ascii_character,
-            color_code: ColorCode::new_from(color_code)
+            color_code: ColorCode::new_from(color_code),
         })
+    }
+    pub fn update_cursor(&mut self) {
+        self.update_color_code(CURSOR.color_code.0);
     }
 }
 
@@ -357,7 +383,6 @@ fn test_println_many() {
 
 #[test_case]
 fn test_println_output() {
-    use x86_64::instructions::interrupts;
     use core::fmt::Write;
     let s = "Some test string that fits on a single line";
     without_interrupts(|| {
