@@ -27,7 +27,7 @@ fn panic(info: &PanicInfo) -> ! {
 #[allow(unconditional_recursion)]
 fn stack_overflow(){
     stack_overflow();
-    Volatile::new(0).read(); // avoid automatic optimization
+    Volatile::new(0).write_only(); // avoid automatic optimization
 }
 
 lazy_static!{

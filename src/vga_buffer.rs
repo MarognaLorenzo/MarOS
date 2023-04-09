@@ -4,7 +4,6 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
 use x86_64::instructions::interrupts::without_interrupts;
-use crate::serial_println;
 use crate::vga_buffer::Color::{LightCyan, White};
 
 lazy_static! {
@@ -19,8 +18,8 @@ lazy_static! {
     });
 }
 
-const CURSOR: ScreenChar = ScreenChar{ ascii_character: 0, color_code: ColorCode::new(LightCyan, LightCyan) };
-const EMPTY: ScreenChar = ScreenChar{ ascii_character: 0, color_code: ColorCode::new(Color::White, Color::Black) };
+const CURSOR: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(White, LightCyan) };
+const EMPTY: ScreenChar = ScreenChar { ascii_character: 0, color_code: ColorCode::new(Color::White, Color::Black) };
 
 /// The standard color palette in VGA text mode.
 #[allow(dead_code)]
@@ -112,15 +111,15 @@ impl Writer {
                 self.new_line()
             }
             byte => {
-                if self.column_position >= BUFFER_WIDTH {self.new_line();}
-                self.write_relative_sc(0,ScreenChar {
+                if self.column_position >= BUFFER_WIDTH { self.new_line(); }
+                self.write_relative_sc(0, ScreenChar {
                     ascii_character: byte,
                     color_code,
                 });
                 self.column_position += 1;
             }
         }
-        self.write_relative_sc(0,CURSOR);
+        self.write_relative_sc(0, CURSOR);
     }
 
     /// Writes the given ASCII string to the buffer.
@@ -133,12 +132,12 @@ impl Writer {
             match byte {
                 // printable ASCII byte or newline
                 0x20..=0x7e | b'\n' => self.write_byte(byte),
-                b'\t' => { for _ in 0..4 {self.write_byte(b' ')} }
+                b'\t' => { for _ in 0..4 { self.write_byte(b' ') } }
                 0x08 => { // backspace
                     self.clean_cursor_current_position();
-                    if self.column_position > 0 {self.column_position -= 1;} else {
-                        if self.row_position != 0 {self.row_position -=1;}
-                        self.column_position = BUFFER_WIDTH -1;
+                    if self.column_position > 0 { self.column_position -= 1; } else {
+                        if self.row_position != 0 { self.row_position -= 1; }
+                        self.column_position = BUFFER_WIDTH - 1;
                         while self.read_relative_sc(0).ascii_character == 0x0 && self.column_position != 0 {
                             self.column_position -= 1;
                         }
@@ -173,7 +172,6 @@ impl Writer {
 
     /// Clears a row by overwriting it with blank characters.
     fn clear_row(&mut self, row: usize) {
-
         let blank = ScreenChar {
             ascii_character: b' ',
             color_code: self.color_code,
@@ -194,32 +192,72 @@ impl Writer {
         }
     }
 
-    fn read_relative_sc(&mut self, shift: usize) -> ScreenChar {
-        let (row, col) = self.get_relativve_position(shift);
+    fn read_relative_sc(&mut self, shift: i32) -> ScreenChar {
+        let (row, col) = self.get_relative_position(shift);
         self.buffer.chars[row][col].read()
     }
 
-    fn write_relative_sc(&mut self, shift: usize, sc: ScreenChar) {
-        let (row,col ) = self.get_relativve_position(shift);
+    fn write_relative_sc(&mut self, shift: i32, sc: ScreenChar) {
+        let (row, col) = self.get_relative_position(shift);
         self.buffer.chars[row][col].write(ScreenChar {
             ascii_character: sc.ascii_character,
             color_code: sc.color_code,
         });
     }
-
+    /// Writes empty Screenchar in current position if there is a CURSOR on it
     fn clean_cursor_current_position(&mut self) {
         let current_sc = self.read_relative_sc(0);
-        if  current_sc == CURSOR { // Cursor visibility has to adapt
-            self.write_relative_sc(0, EMPTY);
+        if current_sc.color_code == CURSOR.color_code { // Cursor visibility has to adapt
+            self.write_relative_sc(0, ScreenChar {
+                color_code: self.color_code,
+                ascii_character: current_sc.ascii_character,
+            });
         }
     }
 
-    fn get_relativve_position(&mut self, shift: usize) -> (usize, usize){
-        let row = if self.column_position + shift < BUFFER_WIDTH {self.row_position} else {
-            if self.row_position +1 < BUFFER_HEIGHT {self.row_position + 1} else {self.shift_lines_up(); self.row_position}
-        };
-        let col = if self.column_position + shift < BUFFER_WIDTH {self.column_position + shift} else {0};
-        (row, col)
+    fn get_relative_position(&mut self, shift: i32) -> (usize, usize) {
+        if shift < 0 {
+            if self.column_position != 0 { self.column_position -= 1 } else {
+                self.row_position = if self.row_position != 0 { self.row_position - 1 } else { 0 };
+                self.column_position = BUFFER_WIDTH - 1;
+                while self.read_relative_sc(0).ascii_character == EMPTY.ascii_character && self.column_position != 0 {
+                    self.column_position -= 1;
+                }
+            }
+            return self.get_relative_position(shift + 1);
+        }
+        if shift > 0 {
+            if self.column_position == BUFFER_WIDTH - 1 || self.buffer.chars[self.row_position][self.column_position + 1].read() == EMPTY {
+                self.column_position = 0;
+                self.row_position = if self.row_position != BUFFER_HEIGHT - 1
+                {self.row_position + 1}
+                else {self.row_position}
+            } else {
+                if self.read_relative_sc(0) != EMPTY {self.column_position += 1;}
+            }
+            return self.get_relative_position(shift - 1);
+        }
+
+        (self.row_position, self.column_position)
+    }
+
+    pub fn move_left(&mut self) {
+        self.clean_cursor_current_position();
+        (self.row_position, self.column_position) = self.get_relative_position(-1);
+        let cs = self.read_relative_sc(0).ascii_character;
+        self.write_relative_sc(0, ScreenChar {
+            ascii_character: cs,
+            color_code: CURSOR.color_code,
+        })
+    }
+    pub fn move_right(&mut self) {
+        self.clean_cursor_current_position();
+        (self.row_position, self.column_position) = self.get_relative_position(1);
+        let cs = self.read_relative_sc(0).ascii_character;
+        self.write_relative_sc(0, ScreenChar {
+            ascii_character: cs,
+            color_code: CURSOR.color_code,
+        })
     }
 }
 

@@ -3,6 +3,7 @@
 #![feature(custom_test_frameworks)]
 #![feature(abi_x86_interrupt)]
 #![feature(portable_simd)]
+#![feature(alloc_error_handler)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
@@ -13,6 +14,9 @@ pub mod vga_buffer;
 pub mod interrupts;
 pub mod gdt;
 pub mod memory;
+pub mod allocator;
+
+extern crate alloc;
 
 use core::panic::PanicInfo;
 
@@ -73,15 +77,11 @@ pub fn init() {
     x86_64::instructions::interrupts::enable();
 }
 
-
 pub fn hlt_loop() -> ! {
     loop {
         x86_64::instructions::hlt();
     }
 }
-
-
-// in src/lib.rs
 
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
@@ -96,4 +96,9 @@ fn test_kernel_main(_boot_info: &'static BootInfo) -> ! {
     init();
     test_main();
     hlt_loop();
+}
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+    panic!("allocation error: {:?}", layout)
 }

@@ -2,7 +2,7 @@ use core::alloc::Layout;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
 use crate::{gdt, hlt_loop, print, println};
 use lazy_static::lazy_static;
-use pc_keyboard::Keyboard;
+use pc_keyboard::{Keyboard, KeyCode};
 
 pub fn init_idt() {
     IDT.load();
@@ -32,8 +32,8 @@ extern "x86-interrupt" fn breakpoint_handler(
 
 extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
-    _error_code: PageFaultErrorCode
-){
+    _error_code: PageFaultErrorCode,
+) {
     println!("EXCEPTION: PAGE FAULT");
     println!("Accessed address: {:?}", Cr2::read());
     println!("Error code: {:?}", _error_code);
@@ -59,6 +59,7 @@ use spin::Mutex;
 use x86_64::instructions::hlt;
 use x86_64::instructions::port::Port;
 use x86_64::registers::control::Cr2;
+use crate::vga_buffer::WRITER;
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -104,7 +105,14 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
             match key {
-                DecodedKey::RawKey(rk) => { /*print!("{:?}", key)*/ }
+                DecodedKey::RawKey(rk) => {
+                    // print!("{:?}", rk);
+                    match rk {
+                        KeyCode::ArrowLeft => WRITER.lock().move_left(),
+                        KeyCode::ArrowRight => WRITER.lock().move_right(),
+                        _ => {}
+                    }
+                }
                 DecodedKey::Unicode(charachter) => { print!("{}", charachter) }
             }
         }
