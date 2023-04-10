@@ -54,9 +54,6 @@ fn test_breakpoints_exception() {
 
 use pic8259::ChainedPics;
 use spin;
-use spin::Mutex;
-use x86_64::instructions::hlt;
-use x86_64::instructions::port::Port;
 use x86_64::registers::control::Cr2;
 use crate::vga_buffer::WRITER;
 

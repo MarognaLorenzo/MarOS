@@ -6,12 +6,9 @@
 
 use core::panic::PanicInfo;
 use bootloader::{BootInfo, entry_point};
-use x86_64::structures::paging::{Page, Translate};
 use x86_64::VirtAddr;
-use MarOS::{allocator, hlt_loop, memory, print, println};
+use MarOS::{allocator, hlt_loop, memory, println};
 use MarOS::memory::BootInfoFrameAllocator;
-use alloc::{boxed::Box, vec, vec::Vec, rc::Rc};
-use MarOS::vga_buffer::WRITER;
 
 extern crate alloc;
 

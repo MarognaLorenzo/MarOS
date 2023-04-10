@@ -88,6 +88,7 @@ pub fn hlt_loop() -> ! {
 
 #[cfg(test)]
 use bootloader::{entry_point, BootInfo};
+use crate::vga_buffer::Writer;
 
 #[cfg(test)]
 entry_point!(test_kernel_main);
