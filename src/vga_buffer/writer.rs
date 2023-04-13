@@ -62,6 +62,9 @@ impl Writer {
                 0x16 => {//Control-v
                     self.paste_line(self.row_position);
                 }
+                0x7f => {//canc
+                    self.canc();
+                }
                 // not part of printable ASCII range
                 _ => self.write_byte(byte),
             }
@@ -276,6 +279,19 @@ impl Writer {
     fn backspace(&mut self){
         self.clean_cursor_current_position();
         self.move_left();
+        for i in self.column_position..BUFFER_WIDTH - 1 {
+            let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
+            self.buffer.chars[self.row_position][i].write(ScreenChar {
+                ascii_character: nc,
+                color_code: self.color_code,
+            })
+        }
+        self.buffer.chars[self.row_position][BUFFER_WIDTH - 1].write(EMPTY);
+        self.update_cursor();
+    }
+    fn canc(&mut self){
+        self.clean_cursor_current_position();
+        self.write_relative_sc(0, EMPTY);
         for i in self.column_position..BUFFER_WIDTH - 1 {
             let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
             self.buffer.chars[self.row_position][i].write(ScreenChar {
