@@ -41,7 +41,7 @@ impl Writer {
                     self.tab();
                 }
                 0x08 => { // backspace
-                   self.backspace();
+                    self.backspace();
                 }
                 0x1b => { // Esc
                     self.clear_all();
@@ -171,7 +171,7 @@ impl Writer {
                 while self.read_relative_sc(0).ascii_character == EMPTY.ascii_character && self.column_position != 0 {
                     self.column_position -= 1;
                 }
-                if !(self.read_relative_sc(0) == EMPTY) { self.column_position += 1 };
+                if !(self.read_relative_sc(0) == EMPTY) && self.column_position != BUFFER_WIDTH - 1 { self.column_position += 1 };
             }
             return self.get_relative_position(shift + 1);
         }
@@ -276,20 +276,40 @@ impl Writer {
         }
         self.move_right()
     }
-    fn backspace(&mut self){
+    fn backspace(&mut self) {
         self.clean_cursor_current_position();
+        let mut tmp_str = String::new();
+        let mut going_up: bool = false;
+        if self.column_position == 0 && self.row_position != 0 {
+            going_up = true;
+            for i in 0..BUFFER_WIDTH {
+                let sc = self.buffer.chars[self.row_position][i].read();
+                if sc == EMPTY { break; }
+                tmp_str.push(sc.ascii_character as char);
+            }
+        }
         self.move_left();
-        for i in self.column_position..BUFFER_WIDTH - 1 {
-            let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
-            self.buffer.chars[self.row_position][i].write(ScreenChar {
-                ascii_character: nc,
-                color_code: self.color_code,
-            })
+        if !going_up {
+            for i in self.column_position..BUFFER_WIDTH - 1 {
+                let nc = self.buffer.chars[self.row_position][i + 1].read().ascii_character;
+                self.buffer.chars[self.row_position][i].write(ScreenChar {
+                    ascii_character: nc,
+                    color_code: self.color_code,
+                })
+            }
+        } else {
+            self.clear_row(self.row_position + 1);
+            let (prev_col, prev_row) = (self.column_position, self.row_position);
+            for ch in tmp_str.chars() {
+                self.write_byte(ch as u8)
+            }
+            self.clean_cursor_current_position();
+            (self.column_position, self.row_position) = (prev_col, prev_row );
         }
         self.buffer.chars[self.row_position][BUFFER_WIDTH - 1].write(EMPTY);
         self.update_cursor();
     }
-    fn canc(&mut self){
+    fn canc(&mut self) {
         self.clean_cursor_current_position();
         self.write_relative_sc(0, EMPTY);
         for i in self.column_position..BUFFER_WIDTH - 1 {
@@ -310,4 +330,3 @@ impl fmt::Write for Writer {
         Ok(())
     }
 }
-pub fn count(){}
